@@ -20,12 +20,17 @@ if [ -z "$1" ]; then
     exit 1
 fi
 
-# Check if services are running
-if ! podman-compose -f "$COMPOSE_FILE" ps | grep -q "zyga-ui-nginx.*Up"; then
+# Check if nginx container is running
+if ! podman ps --format "{{.Names}}" | grep -q "zyga-ui-nginx"; then
     echo "❌ Nginx is not running. Start services first:"
     echo "   ./pscripts/start-web.sh"
+    echo ""
+    echo "💡 To check container status:"
+    echo "   podman ps -a | grep nginx"
     exit 1
 fi
+
+echo "✅ Nginx container is running"
 
 echo "🔐 Setting up SSL certificates for: $DOMAIN"
 echo "   Email: $EMAIL"

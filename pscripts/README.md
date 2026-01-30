@@ -43,6 +43,20 @@ Stop all services
 podman-compose -f docker-compose-demo.yml down -v
 ```
 
+### `status-web.sh`
+Check the status of all services
+
+```bash
+./pscripts/status-web.sh
+```
+
+**Shows:**
+- Container status and ports
+- Service health checks (HTTP responses)
+- Volume information
+- Recent nginx logs
+- Access points and helpful commands
+
 ### `logs-web.sh`
 View logs for services
 
