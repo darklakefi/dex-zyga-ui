@@ -1,0 +1,63 @@
+services:
+  demo-web:
+    build:
+      context: .
+      dockerfile: docker/demo-web/Dockerfile
+    container_name: zyga-ui-demo-web
+    ports:
+      - "3000:3000"
+    environment:
+      # Network configuration (mainnet or devnet)
+      - NEXT_PUBLIC_NETWORK=devnet
+      # Helius API key for mainnet (not required for devnet)
+      - NEXT_PUBLIC_HELIUS_API_KEY=${HELIUS_API_KEY}
+      # Optional: Custom RPC endpoint override
+      # - NEXT_PUBLIC_RPC_ENDPOINT=your_custom_rpc_endpoint
+    volumes:
+      - .:/app
+      - demo-web-node-modules:/app/node_modules
+      - /app/.next
+    networks:
+      zyga-ui:
+        aliases:
+          - web
+    command: pnpm run dev
+
+  # Nginx reverse proxy with SSL
+  nginx:
+    image: nginx:alpine
+    container_name: zyga-ui-nginx
+    ports:
+      - "80:80"
+      - "443:443"
+    depends_on:
+      - demo-web
+    volumes:
+      - ./docker/nginx/conf.d:/etc/nginx/conf.d:ro
+      - certbot-www:/var/www/certbot:ro
+      - certbot-conf:/etc/letsencrypt:ro
+    networks:
+      - zyga-ui
+    restart: unless-stopped
+    command: ["/bin/sh", "-c", "while :; do sleep 6h & wait $${!}; nginx -s reload; done & nginx -g 'daemon off;'"]
+
+  # Certbot for Let's Encrypt SSL certificates
+  certbot:
+    image: certbot/certbot:latest
+    container_name: zyga-ui-certbot
+    volumes:
+      - certbot-www:/var/www/certbot:rw
+      - certbot-conf:/etc/letsencrypt:rw
+    entrypoint: "/bin/sh -c 'trap exit TERM; while :; do certbot renew; sleep 12h & wait $${!}; done;'"
+    networks:
+      - zyga-ui
+    restart: unless-stopped
+
+networks:
+  zyga-ui:
+    driver: bridge
+
+volumes:
+  demo-web-node-modules:
+  certbot-www:
+  certbot-conf:
