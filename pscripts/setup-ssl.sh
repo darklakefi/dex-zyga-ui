@@ -36,9 +36,9 @@ echo "🔐 Setting up SSL certificates for: $DOMAIN"
 echo "   Email: $EMAIL"
 echo ""
 
-# Run certbot to obtain certificates
+# Run certbot to obtain certificates using the running certbot service
 echo "📝 Running certbot..."
-podman-compose -f "$COMPOSE_FILE" run --rm certbot certonly \
+podman exec zyga-ui-certbot certbot certonly \
     --webroot \
     --webroot-path=/var/www/certbot \
     --email "$EMAIL" \
