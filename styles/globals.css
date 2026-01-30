@@ -34,6 +34,41 @@ body { margin: 0; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI
   color: var(--text);
 }
 
+.network-indicator {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.network-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  border: 1px solid;
+}
+
+.network-badge.devnet {
+  background: rgba(255, 165, 0, 0.1);
+  border-color: rgba(255, 165, 0, 0.3);
+  color: #ffa500;
+}
+
+.network-badge.mainnet {
+  background: rgba(0, 255, 0, 0.1);
+  border-color: rgba(0, 255, 0, 0.3);
+  color: #00ff00;
+}
+
+.network-note {
+  font-size: 11px;
+  color: var(--muted);
+  font-weight: 400;
+}
+
 .connect-btn {
   background: #22283a;
   color: var(--text);

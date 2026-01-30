@@ -509,7 +509,14 @@ export default function Home() {
       />
       
       <div className="header">
-        <div className="brand"></div>
+        <div className="brand">
+          <div className="network-indicator">
+            <span className={`network-badge ${NETWORK}`}>
+              {NETWORK === 'devnet' ? '🔧 Devnet' : '🌐 Mainnet'}
+            </span>
+            <span className="network-note">*Network is fixed at the moment</span>
+          </div>
+        </div>
         <div>
           {!connected ? (
             <button className="connect-btn" onClick={() => setWalletModalOpen(true)}>Connect Wallet</button>
