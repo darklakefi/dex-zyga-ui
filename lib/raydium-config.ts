@@ -15,17 +15,20 @@ export async function initRaydium(userPublicKey: string | PublicKey): Promise<Ra
   const cluster = network === 'devnet' ? 'devnet' : 'mainnet';
 
   let rpcEndpoint: string;
-  if (network === 'devnet') {
-    rpcEndpoint = 'https://api.devnet.solana.com';
+  
+  // Use custom RPC endpoint if provided
+  if (process.env.NEXT_PUBLIC_RPC_ENDPOINT) {
+    rpcEndpoint = process.env.NEXT_PUBLIC_RPC_ENDPOINT;
   } else {
-    // Use custom RPC endpoint if provided, otherwise use Helius
-    if (process.env.NEXT_PUBLIC_RPC_ENDPOINT) {
-      rpcEndpoint = process.env.NEXT_PUBLIC_RPC_ENDPOINT;
+    // Use Helius for both mainnet and devnet
+    const heliusKey = process.env.NEXT_PUBLIC_HELIUS_API_KEY;
+    if (!heliusKey) {
+      throw new Error('NEXT_PUBLIC_HELIUS_API_KEY is required. Please add it to your .env.local file.');
+    }
+    
+    if (network === 'devnet') {
+      rpcEndpoint = `https://devnet.helius-rpc.com/?api-key=${heliusKey}`;
     } else {
-      const heliusKey = process.env.NEXT_PUBLIC_HELIUS_API_KEY;
-      if (!heliusKey) {
-        throw new Error('NEXT_PUBLIC_HELIUS_API_KEY is required for mainnet. Please add it to your .env.local file.');
-      }
       rpcEndpoint = `https://mainnet.helius-rpc.com/?api-key=${heliusKey}`;
     }
   }

@@ -12,18 +12,22 @@ export const WalletProvider: FC<Props> = ({ children }) => {
   const network = process.env.NEXT_PUBLIC_NETWORK || 'mainnet';
   
   const endpoint = useMemo(() => {
-    if (network === 'devnet') {
-      return 'https://api.devnet.solana.com';
-    }
-    // Mainnet: use custom RPC endpoint or Helius
+    // Use custom RPC endpoint if provided
     if (process.env.NEXT_PUBLIC_RPC_ENDPOINT) {
       return process.env.NEXT_PUBLIC_RPC_ENDPOINT;
     }
+    
+    // Use Helius for both mainnet and devnet
     const heliusKey = process.env.NEXT_PUBLIC_HELIUS_API_KEY;
     if (!heliusKey) {
-      throw new Error('NEXT_PUBLIC_HELIUS_API_KEY is required for mainnet. Please add it to your .env.local file.');
+      throw new Error('NEXT_PUBLIC_HELIUS_API_KEY is required. Please add it to your .env.local file.');
     }
-    return `https://mainnet.helius-rpc.com/?api-key=${heliusKey}`;
+    
+    if (network === 'devnet') {
+      return `https://devnet.helius-rpc.com/?api-key=${heliusKey}`;
+    } else {
+      return `https://mainnet.helius-rpc.com/?api-key=${heliusKey}`;
+    }
   }, [network]);
 
   const wallets = useMemo(
