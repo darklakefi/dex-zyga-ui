@@ -222,6 +222,7 @@ export default function Home() {
   const [loadingBalance, setLoadingBalance] = useState<boolean>(false);
   const [swapping, setSwapping] = useState<boolean>(false);
   const [poolId, setPoolId] = useState<string>('');
+  const [protectWithZyga, setProtectWithZyga] = useState<boolean>(false);
   const debounceRef = useRef<NodeJS.Timeout | null>(null);
 
   const handleSelectWallet = async (selectedWallet: Wallet) => {
@@ -452,6 +453,12 @@ export default function Home() {
       const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash('confirmed');
       transaction.message.recentBlockhash = blockhash;
 
+      // TODO: Inject Darklake Zyga protection instruction if enabled
+      if (protectWithZyga) {
+        // Placeholder for future Zyga instruction injection
+        console.log('Zyga protection enabled - instruction injection will be added here');
+      }
+
       // Sign transaction with wallet
       const signedTransaction = await signTransaction(transaction);
 
@@ -627,6 +634,21 @@ export default function Home() {
         )}
 
         {error && <div className="error" style={{ margin: '6px 2px 10px' }}>{error}</div>}
+
+        <div className="zyga-protection">
+          <label className="toggle-container">
+            <input
+              type="checkbox"
+              checked={protectWithZyga}
+              onChange={(e) => setProtectWithZyga(e.target.checked)}
+              className="toggle-input"
+            />
+            <span className="toggle-slider"></span>
+            <span className="toggle-label">
+              🛡️ Protect using Zyga
+            </span>
+          </label>
+        </div>
 
         <button 
           className="action" 

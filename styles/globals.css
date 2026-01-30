@@ -433,6 +433,74 @@ body { margin: 0; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI
   gap: 12px;
 }
 
+/* Zyga Protection Toggle */
+.zyga-protection {
+  margin: 16px 0 12px 0;
+  padding: 12px;
+  background: rgba(147, 51, 234, 0.05);
+  border: 1px solid rgba(147, 51, 234, 0.2);
+  border-radius: 10px;
+}
+
+.toggle-container {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.toggle-input {
+  display: none;
+}
+
+.toggle-slider {
+  position: relative;
+  width: 44px;
+  height: 24px;
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  transition: all 0.3s ease;
+  flex-shrink: 0;
+}
+
+.toggle-slider::before {
+  content: '';
+  position: absolute;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--muted);
+  top: 2px;
+  left: 2px;
+  transition: all 0.3s ease;
+}
+
+.toggle-input:checked + .toggle-slider {
+  background: rgba(147, 51, 234, 0.3);
+  border-color: #9333ea;
+}
+
+.toggle-input:checked + .toggle-slider::before {
+  transform: translateX(20px);
+  background: #9333ea;
+}
+
+.toggle-label {
+  color: var(--text);
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.toggle-container:hover .toggle-slider {
+  background: rgba(255, 255, 255, 0.15);
+}
+
+.toggle-input:checked + .toggle-slider:hover {
+  background: rgba(147, 51, 234, 0.4);
+}
+
 .wallet-option {
   display: flex;
   align-items: center;
