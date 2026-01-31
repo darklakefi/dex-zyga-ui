@@ -13,6 +13,9 @@
 /.next/
 /out/
 
+# proof generation temporary files
+/.proof-tmp/
+
 # production
 /build
 

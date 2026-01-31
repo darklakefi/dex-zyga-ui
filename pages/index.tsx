@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useWallet, useConnection, type Wallet } from '@solana/wallet-adapter-react';
 import { PublicKey } from '@solana/web3.js';
 import { TOKEN_PROGRAM_ID } from '@solana/spl-token';
-
+import { VersionedTransaction, MessageV0, TransactionInstruction, ComputeBudgetProgram } from '@solana/web3.js';
 // Token type
 interface Token {
   symbol: string;
@@ -443,21 +443,200 @@ export default function Home() {
       }
 
       // Deserialize transaction
-      const { VersionedTransaction } = await import('@solana/web3.js');
+      
       const txBuffer = Buffer.from(data.serializedTransaction, 'base64');
       
       // Deserialize as VersionedTransaction (V0)
-      const transaction = VersionedTransaction.deserialize(txBuffer);
+      let transaction = VersionedTransaction.deserialize(txBuffer);
 
       // Get recent blockhash and set it
       const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash('confirmed');
+
+      console.log('Original transaction:', transaction);
+
+      // Generate Zyga proof if protection is enabled
+      if (protectWithZyga) {
+        console.log('Generating Zyga slippage protection proof...');
+        
+        try {
+          // Get current balance of output token
+          const outputTokenAccount = await connection.getTokenAccountsByOwner(
+            publicKey,
+            { mint: new PublicKey(to.mint) }
+          );
+
+          if (outputTokenAccount.value.length === 0) {
+            throw new Error('Output token account not found. You need to have the output token account created first.');
+          }
+
+          const outputTokenAccountPubkey = outputTokenAccount.value[0].pubkey;
+          
+          let currentOutputBalance = '0';
+          const accountInfo = await connection.getTokenAccountBalance(outputTokenAccountPubkey);
+          currentOutputBalance = accountInfo.value.amount;
+
+          // Calculate minimum output in base units
+          const minOutputAmount = 0; // toBaseUnits(amountOut, to.decimals);
+          
+          // Calculate actual amount (current balance + expected output)
+          const actualAmount = (BigInt(currentOutputBalance) + BigInt(minOutputAmount)).toString();
+
+          console.log('Proof params:', {
+            outputTokenAccount: outputTokenAccountPubkey.toString(),
+            currentBalance: currentOutputBalance,
+            expectedOutput: minOutputAmount,
+            actualAmount,
+            minAmount: minOutputAmount
+          });
+
+          // Call backend to generate proof instruction
+          const proofApiUrl = process.env.NEXT_PUBLIC_PROOF_API_URL || 'http://localhost:4000';
+          const proofInstructionResponse = await fetch(`${proofApiUrl}/generate-proof-ix`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              actualAmount,
+              minAmount: minOutputAmount,
+            }),
+          });
+
+          const proofInstructionData = await proofInstructionResponse.json() as { success: boolean; proofIx: string; size: number; error: string };
+
+          console.log('Proof instruction data:', proofInstructionData);
+
+          if (!proofInstructionData.success || !proofInstructionData.proofIx) {
+            throw new Error(proofInstructionData.error || 'Failed to generate proof');
+          }
+
+          console.log('Proof generated successfully:', {
+            size: proofInstructionData.size,
+            proofIx: proofInstructionData.proofIx.substring(0, 50) + '...'
+          });
+
+          // Decode the proof instruction data from base64
+          const proofIxData = Buffer.from(proofInstructionData.proofIx, 'base64');
+
+          // Zyga program ID
+          const zygaProgramId = new PublicKey('7ZpqSoUa77PQVbx6wVCpQgVuXQfw8oYsuPJwoW5YwSPD');
+
+          // Create the Zyga proof instruction with the output token account
+          // const proofInstruction = new TransactionInstruction({
+          //   keys: [{ pubkey: outputTokenAccountPubkey, isSigner: false, isWritable: false }],
+          //   programId: zygaProgramId,
+          //   data: proofIxData,
+          // });
+
+          // Set maximum compute units (1.4M units)
+          const setComputeUnitLimitIx = ComputeBudgetProgram.setComputeUnitLimit({
+            units: 1_400_000,
+          });
+
+          console.log('Adding Zyga proof instruction to swap transaction');
+          
+          // Get original account keys and header info
+          const originalAccountKeys = [...transaction.message.staticAccountKeys];
+          const originalHeader = transaction.message.header;
+          
+          console.log('Original header:', originalHeader);
+          console.log('Original account keys count:', originalAccountKeys.length);
+          
+          // Add lookup table accounts if they exist
+          if (transaction.message.addressTableLookups && transaction.message.addressTableLookups.length > 0) {
+            console.warn('Transaction uses address lookup tables - Zyga protection enabled');
+            console.warn('Address lookup tables:', transaction.message.addressTableLookups);
+          }
+          
+          // Simply append new accounts to the end (don't reorder)
+          const allAccountKeys = [...originalAccountKeys];
+          
+          // Add compute budget program if not present
+          const computeBudgetProgramId = ComputeBudgetProgram.programId;
+          let computeBudgetProgramIndex = allAccountKeys.findIndex(key => key.equals(computeBudgetProgramId));
+          if (computeBudgetProgramIndex === -1) {
+            computeBudgetProgramIndex = allAccountKeys.length;
+            allAccountKeys.push(computeBudgetProgramId);
+          }
+          
+          // Add zyga program if not present
+          let zygaProgramIndex = allAccountKeys.findIndex(key => key.equals(zygaProgramId));
+          if (zygaProgramIndex === -1) {
+            zygaProgramIndex = allAccountKeys.length;
+            allAccountKeys.push(zygaProgramId);
+          }
+          
+          // Add output token account if not present
+          let outputTokenAccountIndex = allAccountKeys.findIndex(key => key.equals(outputTokenAccountPubkey));
+          if (outputTokenAccountIndex === -1) {
+            outputTokenAccountIndex = allAccountKeys.length;
+            allAccountKeys.push(outputTokenAccountPubkey);
+          }
+          
+          console.log('New account keys count:', allAccountKeys.length);
+          console.log('New accounts added:', allAccountKeys.length - originalAccountKeys.length);
+          
+          // Compile compute budget instruction
+          const computeBudgetCompiledIx = {
+            programIdIndex: computeBudgetProgramIndex,
+            accountKeyIndexes: [],
+            data: Uint8Array.from(setComputeUnitLimitIx.data),
+          };
+          
+          // Compile proof instruction
+          const proofCompiledIx = {
+            programIdIndex: zygaProgramIndex,
+            accountKeyIndexes: [outputTokenAccountIndex],
+            data: proofIxData,
+          };
+          
+          // Keep existing instructions as-is
+          const existingInstructions = transaction.message.compiledInstructions;
+          
+          // Create new compiled instructions array
+          const newCompiledInstructions = [
+            computeBudgetCompiledIx,
+            ...existingInstructions,
+            proofCompiledIx,
+          ];
+          
+          console.log('Total instructions:', newCompiledInstructions.length);
+          
+          // Calculate new header - count how many new readonly accounts were added
+          const newAccountsAdded = allAccountKeys.length - originalAccountKeys.length;
+          const newHeader = {
+            numRequiredSignatures: originalHeader.numRequiredSignatures,
+            numReadonlySignedAccounts: originalHeader.numReadonlySignedAccounts,
+            numReadonlyUnsignedAccounts: originalHeader.numReadonlyUnsignedAccounts + newAccountsAdded,
+          };
+          
+          console.log('New header:', newHeader);
+          
+          // Create new MessageV0 with updated instructions
+          const newMessage = new MessageV0({
+            header: newHeader,
+            staticAccountKeys: allAccountKeys,
+            recentBlockhash: blockhash,
+            compiledInstructions: newCompiledInstructions,
+            addressTableLookups: transaction.message.addressTableLookups || [],
+          });
+          
+          transaction = new VersionedTransaction(newMessage);
+          console.log('Swap transaction rebuilt with Zyga protection');
+          
+        } catch (proofError) {
+          console.error('Proof generation failed:', proofError);
+          throw new Error(`Zyga protection failed: ${(proofError as Error).message}`);
+        }
+      } else {
+        // No Zyga protection, just update blockhash
+        transaction.message.recentBlockhash = blockhash;
+      }
+
+      // Update swap transaction blockhash
       transaction.message.recentBlockhash = blockhash;
 
-      // TODO: Inject Darklake Zyga protection instruction if enabled
-      if (protectWithZyga) {
-        // Placeholder for future Zyga instruction injection
-        console.log('Zyga protection enabled - instruction injection will be added here');
-      }
+      console.log('Swap transaction:', transaction);
 
       // Sign transaction with wallet
       const signedTransaction = await signTransaction(transaction);

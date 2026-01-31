@@ -6,11 +6,15 @@ services:
     container_name: zyga-ui-demo-web
     ports:
       - "3000:3000"
+    depends_on:
+      - backend
     environment:
       # Network configuration (mainnet or devnet)
       - NEXT_PUBLIC_NETWORK=devnet
       # Helius API key for mainnet (not required for devnet)
       - NEXT_PUBLIC_HELIUS_API_KEY=${HELIUS_API_KEY}
+      # Backend proof generator URL
+      - NEXT_PUBLIC_PROOF_API_URL=http://backend:4000
       # Optional: Custom RPC endpoint override
       # - NEXT_PUBLIC_RPC_ENDPOINT=your_custom_rpc_endpoint
     volumes:
@@ -21,6 +25,26 @@ services:
       zyga-ui:
         aliases:
           - web
+    command: pnpm run dev
+
+  backend:
+    build:
+      context: .
+      dockerfile: packages/backend/Dockerfile
+    container_name: zyga-ui-backend
+    ports:
+      - "4000:4000"
+    environment:
+      - PORT=4000
+    volumes:
+      - ./packages/backend:/app
+      - backend-node-modules:/app/node_modules
+      - /app/dist
+      - /app/.proof-tmp
+    networks:
+      zyga-ui:
+        aliases:
+          - backend
     command: pnpm run dev
 
   # Nginx reverse proxy with SSL
@@ -59,5 +83,6 @@ networks:
 
 volumes:
   demo-web-node-modules:
+  backend-node-modules:
   certbot-www:
   certbot-conf:
