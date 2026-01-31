@@ -172,6 +172,8 @@ export async function generateSlippageProof(
   // Generate unique tag for this proof
   const tag = `${Date.now()}_${Math.random().toString(36).substring(7)}`;
 
+  console.log('Generating proof for actualAmount:', actualAmount, 'and minAmount:', minAmount);
+
   // Generate proof (result = 1 means a > b)
   const proof = makeProof(actualAmount, minAmount, 1, tag);
 

@@ -53,6 +53,11 @@ const DEVNET_TOKENS: Token[] = [
     mint: 'USDCoctVLVnvTXBEuP9s8hntucdJokbo17RwHuNXemT',
     decimals: 6,
   },
+  {
+    symbol: 'DLink',
+    mint: 'G3nB3rDsYEKKt1zGoYHr8mbrGeB1hViVzdzTZhzDM9J1',
+    decimals: 6,
+  },
 ];
 
 // Select tokens based on network
@@ -453,6 +458,7 @@ export default function Home() {
       const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash('confirmed');
 
       console.log('Original transaction:', transaction);
+      console.log('Original transaction serialized:', JSON.stringify(transaction, null, 2));
 
       // Generate Zyga proof if protection is enabled
       if (protectWithZyga) {
@@ -476,7 +482,7 @@ export default function Home() {
           currentOutputBalance = accountInfo.value.amount;
 
           // Calculate minimum output in base units
-          const minOutputAmount = 0; // toBaseUnits(amountOut, to.decimals);
+          const minOutputAmount = 120; // toBaseUnits(amountOut, to.decimals);
           
           // Calculate actual amount (current balance + expected output)
           const actualAmount = (BigInt(currentOutputBalance) + BigInt(minOutputAmount)).toString();
@@ -489,6 +495,13 @@ export default function Home() {
             minAmount: minOutputAmount
           });
 
+          const body = JSON.stringify({
+            actualAmount,
+            minAmount: minOutputAmount,
+          });
+
+          console.log('Body:', body);
+
           // Call backend to generate proof instruction
           const proofApiUrl = process.env.NEXT_PUBLIC_PROOF_API_URL || 'http://localhost:4000';
           const proofInstructionResponse = await fetch(`${proofApiUrl}/generate-proof-ix`, {
@@ -496,10 +509,7 @@ export default function Home() {
             headers: {
               'Content-Type': 'application/json',
             },
-            body: JSON.stringify({
-              actualAmount,
-              minAmount: minOutputAmount,
-            }),
+            body,
           });
 
           const proofInstructionData = await proofInstructionResponse.json() as { success: boolean; proofIx: string; size: number; error: string };
@@ -521,7 +531,7 @@ export default function Home() {
           // Zyga program ID
           const zygaProgramId = new PublicKey('7ZpqSoUa77PQVbx6wVCpQgVuXQfw8oYsuPJwoW5YwSPD');
 
-          // Create the Zyga proof instruction with the output token account
+          // // Create the Zyga proof instruction with the output token account
           // const proofInstruction = new TransactionInstruction({
           //   keys: [{ pubkey: outputTokenAccountPubkey, isSigner: false, isWritable: false }],
           //   programId: zygaProgramId,
@@ -590,13 +600,18 @@ export default function Home() {
             data: proofIxData,
           };
           
-          // Keep existing instructions as-is
-          const existingInstructions = transaction.message.compiledInstructions;
+          // Shift account indexes in existing instructions
+          // Account indexes >= 9 need to be shifted by +2 because we added 2 new accounts
+          const shiftedInstructions = transaction.message.compiledInstructions.map(ix => ({
+            programIdIndex: ix.programIdIndex >= 9 ? ix.programIdIndex + 2 : ix.programIdIndex,
+            accountKeyIndexes: ix.accountKeyIndexes.map(idx => idx >= 9 ? idx + 2 : idx),
+            data: ix.data,
+          }));
           
-          // Create new compiled instructions array
+          // Create new compiled instructions array - add compute budget and proof at the END
           const newCompiledInstructions = [
             computeBudgetCompiledIx,
-            ...existingInstructions,
+            ...shiftedInstructions,
             proofCompiledIx,
           ];
           
@@ -637,6 +652,49 @@ export default function Home() {
       transaction.message.recentBlockhash = blockhash;
 
       console.log('Swap transaction:', transaction);
+      console.log('Swap transaction serialized:', JSON.stringify(transaction, null, 2));
+
+      // ADD TX SIZE MEASUREMENT
+      // Temporarily empty the last instruction data to test if size is the issue
+      const lastIxIndex = transaction.message.compiledInstructions.length - 1;
+      const originalLastIxData = transaction.message.compiledInstructions[lastIxIndex].data;
+      console.log('Original last instruction data size:', originalLastIxData.length, 'bytes');
+      
+      // Set to empty array for testing
+      transaction.message.compiledInstructions[lastIxIndex].data = new Uint8Array(0);
+      
+      try {
+        const serializedTx = transaction.serialize();
+        const txSize = serializedTx.length;
+        console.log('Transaction size (with empty proof):', txSize, 'bytes');
+        console.log('Solana limit: 1232 bytes');
+        console.log('Remaining:', 1232 - txSize, 'bytes');
+        if (txSize > 1232) {
+          console.error('⚠️ WARNING: Transaction exceeds Solana size limit even without proof data!');
+        } else {
+          console.log('✓ Transaction size is within limits without proof data');
+        }
+      } catch (error) {
+        console.error('Serialization failed even with empty proof data:', error);
+      }
+      
+      // Restore original data
+      transaction.message.compiledInstructions[lastIxIndex].data = originalLastIxData;
+      
+      // Now try with full proof data
+      try {
+        const serializedTxFull = transaction.serialize();
+        const txSizeFull = serializedTxFull.length;
+        console.log('Transaction size (with full proof):', txSizeFull, 'bytes');
+        console.log('Proof data adds:', txSizeFull - 0, 'bytes');
+        if (txSizeFull > 1232) {
+          console.error('⚠️ WARNING: Transaction exceeds Solana size limit with proof!');
+        } else {
+          console.log('✓ Transaction size is within limits with proof');
+        }
+      } catch (error) {
+        console.error('Serialization failed with full proof data:', error);
+      }
 
       // Sign transaction with wallet
       const signedTransaction = await signTransaction(transaction);
