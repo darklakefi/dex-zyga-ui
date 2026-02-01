@@ -25,11 +25,18 @@ COPY packages/backend/package.json ./packages/backend/
 # Install dependencies using workspace (frozen lockfile)
 RUN pnpm install --frozen-lockfile --filter @dex-zyga-ui/backend...
 
-# Set working directory to backend
+# Copy proof-generation into image (used when host volume doesn't have it)
+COPY packages/backend/proof-generation /opt/proof-generation
+RUN chmod +x /opt/proof-generation/zyga
+
+# Copy entrypoint and set working directory to backend
+COPY packages/backend/entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
 WORKDIR /workspace/packages/backend
 
 # Expose port
 EXPOSE 4000
 
+ENTRYPOINT ["/entrypoint.sh"]
 # Start server in development mode
 CMD ["pnpm", "run", "dev"]
