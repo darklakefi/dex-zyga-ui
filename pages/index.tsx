@@ -3,6 +3,7 @@ import { useWallet, useConnection, type Wallet } from '@solana/wallet-adapter-re
 import { PublicKey } from '@solana/web3.js';
 import { TOKEN_PROGRAM_ID } from '@solana/spl-token';
 import { VersionedTransaction, MessageV0, TransactionInstruction, ComputeBudgetProgram } from '@solana/web3.js';
+import { TransactionModal } from '../components/TransactionModal';
 // Token type
 interface Token {
   symbol: string;
@@ -233,6 +234,12 @@ export default function Home() {
   const [slippage, setSlippage] = useState<number>(0.5); // Default 0.5%
   const [customSlippage, setCustomSlippage] = useState<string>('');
   const [faucetLoading, setFaucetLoading] = useState<{ DLink: boolean; dUSDC: boolean }>({ DLink: false, dUSDC: false });
+  const [txModal, setTxModal] = useState<{ isOpen: boolean; title: string; message: string; type: 'success' | 'error' | 'info' }>({
+    isOpen: false,
+    title: '',
+    message: '',
+    type: 'success'
+  });
   const debounceRef = useRef<NodeJS.Timeout | null>(null);
 
   const handleSelectWallet = async (selectedWallet: Wallet) => {
@@ -735,11 +742,16 @@ export default function Home() {
       }
 
       // Success!
-      const explorerUrl = NETWORK === 'devnet' 
+      const explorerUrl = NETWORK === 'devnet'
         ? `https://solscan.io/tx/${signature}?cluster=devnet`
         : `https://solscan.io/tx/${signature}`;
-      
-      alert(`Swap successful!\n\nSwapped ${amountIn} ${from.symbol} for ${amountOut} ${to.symbol}\n\nView on Solscan: ${explorerUrl}`);
+
+      setTxModal({
+        isOpen: true,
+        title: 'Swap Successful',
+        message: `Swapped ${amountIn} ${from.symbol} for ${amountOut} ${to.symbol}\n\nView on Solscan:\n${explorerUrl}`,
+        type: 'success'
+      });
       
       // Refresh balances
       await fetchBalances();
@@ -794,8 +806,13 @@ export default function Home() {
 
       const amount = tokenType === 'DLink' ? '10' : '0.01';
       const explorerUrl = `https://solscan.io/tx/${data.signature}?cluster=devnet`;
-      
-      alert(`Success! ${amount} ${tokenType} sent to your wallet.\n\nTransaction: ${data.signature}\n\nView on Solscan: ${explorerUrl}`);
+
+      setTxModal({
+        isOpen: true,
+        title: 'Faucet Success',
+        message: `${amount} ${tokenType} sent to your wallet.\n\nTransaction: ${data.signature}\n\nView on Solscan:\n${explorerUrl}`,
+        type: 'success'
+      });
       
       // Refresh balances
       await fetchBalances();
@@ -810,13 +827,21 @@ export default function Home() {
 
   return (
     <>
-      <WalletModal 
-        isOpen={walletModalOpen} 
-        onClose={() => setWalletModalOpen(false)} 
+      <WalletModal
+        isOpen={walletModalOpen}
+        onClose={() => setWalletModalOpen(false)}
         wallets={wallets}
         onSelectWallet={handleSelectWallet}
       />
-      
+
+      <TransactionModal
+        isOpen={txModal.isOpen}
+        onClose={() => setTxModal(prev => ({ ...prev, isOpen: false }))}
+        title={txModal.title}
+        message={txModal.message}
+        type={txModal.type}
+      />
+
       <div className="app-header">
         <div className="header-content">
           <div className="header-left">
