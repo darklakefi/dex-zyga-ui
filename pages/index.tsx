@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useWallet, useConnection, type Wallet } from '@solana/wallet-adapter-react';
 import { PublicKey } from '@solana/web3.js';
-import { TOKEN_PROGRAM_ID } from '@solana/spl-token';
+import { TOKEN_PROGRAM_ID, getAssociatedTokenAddress } from '@solana/spl-token';
 import { VersionedTransaction, MessageV0, TransactionInstruction, ComputeBudgetProgram } from '@solana/web3.js';
 import { TransactionModal } from '../components/TransactionModal';
 // Token type
@@ -481,31 +481,27 @@ export default function Home() {
         console.log('Generating Zyga slippage protection proof...');
         
         try {
-          // Get current balance of output token
-          const outputTokenAccount = await connection.getTokenAccountsByOwner(
-            publicKey,
-            { mint: new PublicKey(to.mint) }
+          // Derive the Associated Token Account address deterministically
+          const outputTokenAccountPubkey = await getAssociatedTokenAddress(
+            new PublicKey(to.mint),
+            publicKey
           );
 
-          if (outputTokenAccount.value.length === 0) {
-            throw new Error('Output token account not found. You need to have the output token account created first.');
-          }
-
-          const outputTokenAccountPubkey = outputTokenAccount.value[0].pubkey;
-          
+          // Try to get current balance, default to 0 if account doesn't exist yet
           let currentOutputBalance = '0';
-          const accountInfo = await connection.getTokenAccountBalance(outputTokenAccountPubkey);
-          currentOutputBalance = accountInfo.value.amount;
+          try {
+            const accountInfo = await connection.getTokenAccountBalance(outputTokenAccountPubkey);
+            currentOutputBalance = accountInfo.value.amount;
+          } catch {
+            // Account doesn't exist yet, balance is 0 (exchange will create it)
+            console.log('Output token account does not exist yet, assuming balance of 0');
+          }
 
           // Calculate minimum output amount with slippage tolerance
           // minOutput = expectedOutput * (1 - slippage)
           const expectedOutputBase = BigInt(toBaseUnits(amountOut, to.decimals));
           const slippageDecimal = slippage / 100;
           const minOutputAmount = (expectedOutputBase * BigInt(Math.floor((1 - slippageDecimal) * 1000000)) / BigInt(1000000)).toString();
-          
-          console.log('Expected output base:', expectedOutputBase);
-          console.log('Slippage decimal:', slippageDecimal);
-          console.log('Min output amount:', minOutputAmount);
 
           // Calculate actual amount (current balance + expected output)
           const actualAmount = (BigInt(currentOutputBalance) + BigInt(expectedOutputBase)).toString();
@@ -523,8 +519,6 @@ export default function Home() {
             minAmount: minOutputAmount,
           });
 
-          console.log('Body:', body);
-
           // Call backend to generate proof instruction
           const proofApiUrl = process.env.NEXT_PUBLIC_PROOF_API_URL || 'http://localhost:4000';
           const proofInstructionResponse = await fetch(`${proofApiUrl}/generate-proof-ix`, {
@@ -536,8 +530,6 @@ export default function Home() {
           });
 
           const proofInstructionData = await proofInstructionResponse.json() as { success: boolean; proofIx: string; size: number; error: string };
-
-          console.log('Proof instruction data:', proofInstructionData);
 
           if (!proofInstructionData.success || !proofInstructionData.proofIx) {
             throw new Error(proofInstructionData.error || 'Failed to generate proof');
@@ -566,14 +558,9 @@ export default function Home() {
             units: 1_400_000,
           });
 
-          console.log('Adding Zyga proof instruction to swap transaction');
-          
           // Get original account keys and header info
           const originalAccountKeys = [...transaction.message.staticAccountKeys];
           const originalHeader = transaction.message.header;
-          
-          console.log('Original header:', originalHeader);
-          console.log('Original account keys count:', originalAccountKeys.length);
           
           // Add lookup table accounts if they exist
           if (transaction.message.addressTableLookups && transaction.message.addressTableLookups.length > 0) {
@@ -598,16 +585,14 @@ export default function Home() {
             zygaProgramIndex = allAccountKeys.length;
             allAccountKeys.push(zygaProgramId);
           }
-          
+
           // Add output token account if not present
           let outputTokenAccountIndex = allAccountKeys.findIndex(key => key.equals(outputTokenAccountPubkey));
+
           if (outputTokenAccountIndex === -1) {
             outputTokenAccountIndex = allAccountKeys.length;
             allAccountKeys.push(outputTokenAccountPubkey);
           }
-          
-          console.log('New account keys count:', allAccountKeys.length);
-          console.log('New accounts added:', allAccountKeys.length - originalAccountKeys.length);
           
           // Compile compute budget instruction
           const computeBudgetCompiledIx = {
@@ -623,11 +608,13 @@ export default function Home() {
             data: proofIxData,
           };
           
+          const shiftIndex = allAccountKeys.length - 2;
+
           // Shift account indexes in existing instructions
           // Account indexes >= 9 need to be shifted by +2 because we added 2 new accounts
           const shiftedInstructions = transaction.message.compiledInstructions.map(ix => ({
-            programIdIndex: ix.programIdIndex >= 9 ? ix.programIdIndex + 2 : ix.programIdIndex,
-            accountKeyIndexes: ix.accountKeyIndexes.map(idx => idx >= 9 ? idx + 2 : idx),
+            programIdIndex: ix.programIdIndex >= shiftIndex ? ix.programIdIndex + 2 : ix.programIdIndex,
+            accountKeyIndexes: ix.accountKeyIndexes.map(idx => idx >= shiftIndex ? idx + 2 : idx),
             data: ix.data,
           }));
           
@@ -638,8 +625,6 @@ export default function Home() {
             proofCompiledIx,
           ];
           
-          console.log('Total instructions:', newCompiledInstructions.length);
-          
           // Calculate new header - count how many new readonly accounts were added
           const newAccountsAdded = allAccountKeys.length - originalAccountKeys.length;
           const newHeader = {
@@ -647,8 +632,6 @@ export default function Home() {
             numReadonlySignedAccounts: originalHeader.numReadonlySignedAccounts,
             numReadonlyUnsignedAccounts: originalHeader.numReadonlyUnsignedAccounts + newAccountsAdded,
           };
-          
-          console.log('New header:', newHeader);
           
           // Create new MessageV0 with updated instructions
           const newMessage = new MessageV0({
@@ -658,7 +641,7 @@ export default function Home() {
             compiledInstructions: newCompiledInstructions,
             addressTableLookups: transaction.message.addressTableLookups || [],
           });
-          
+
           transaction = new VersionedTransaction(newMessage);
           console.log('Swap transaction rebuilt with Zyga protection');
           
