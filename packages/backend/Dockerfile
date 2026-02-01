@@ -1,6 +1,15 @@
 # Backend Dockerfile for Zyga Proof Generator
 FROM node:20-alpine
 
+# Install build dependencies for native modules
+RUN apk add --no-cache \
+    python3 \
+    make \
+    g++ \
+    linux-headers \
+    eudev-dev \
+    libusb-dev
+
 # Install pnpm
 RUN corepack enable && corepack prepare pnpm@9.15.5 --activate
 
