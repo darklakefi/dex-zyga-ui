@@ -37,8 +37,8 @@ Generate a zero-knowledge proof instruction that actualAmount > minAmount.
 ```json
 {
   "success": true,
-  "proof": "base64_encoded_proof_instruction_data",
-  "size": 576
+  "proofIx": "base64_encoded_proof_instruction_data",
+  "size": 584
 }
 ```
 
@@ -49,6 +49,39 @@ Generate a zero-knowledge proof instruction that actualAmount > minAmount.
   "message": "Detailed error description"
 }
 ```
+
+### `POST /faucet`
+Transfer devnet tokens to a wallet address (devnet only).
+
+**Request Body:**
+```json
+{
+  "walletAddress": "7xKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsU",
+  "tokenType": "DLink"
+}
+```
+
+**Token Types:**
+- `DLink` - Transfers 10 DLink tokens
+- `dUSDC` - Transfers 0.01 dUSDC tokens
+
+**Response:**
+```json
+{
+  "success": true,
+  "signature": "transaction_signature"
+}
+```
+
+**Error Response:**
+```json
+{
+  "error": "Error message",
+  "retryAfter": 3
+}
+```
+
+**Rate Limiting:** 5 second cooldown per wallet address
 
 ## Package Structure
 
@@ -105,7 +138,28 @@ curl -X POST http://localhost:4000/generate-proof-ix \
 
 ## Environment Variables
 
-- `PORT` - Server port (default: 4000)
+Create a `.env.local` file in the `packages/backend/` directory (see `.env.example`):
+
+```bash
+# Server Port
+PORT=4000
+
+# Network Configuration
+NETWORK=devnet
+
+# Helius API Key (REQUIRED for RPC connections)
+HELIUS_API_KEY=your_helius_api_key_here
+
+# Faucet Private Key (Devnet Only)
+FAUCET_PRIVATE_KEY=[1,2,3,4,5,...]
+```
+
+### Variable Details:
+
+- **`PORT`** - Server port (default: 4000)
+- **`NETWORK`** - Network configuration: `mainnet` or `devnet`
+- **`HELIUS_API_KEY`** - Helius RPC API key for blockchain connections
+- **`FAUCET_PRIVATE_KEY`** - Private key for devnet faucet wallet (JSON array format)
 
 ## Architecture
 

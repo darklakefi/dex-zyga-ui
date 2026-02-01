@@ -44,11 +44,6 @@ const MAINNET_TOKENS: Token[] = [
 
 const DEVNET_TOKENS: Token[] = [
   {
-    symbol: 'WSOL',
-    mint: 'So11111111111111111111111111111111111111112',
-    decimals: 9,
-  },
-  {
     symbol: 'dUSDC',
     mint: 'USDCoctVLVnvTXBEuP9s8hntucdJokbo17RwHuNXemT',
     decimals: 6,
@@ -131,11 +126,17 @@ function TokenDropdown({ selectedToken, onSelect }: TokenDropdownProps) {
   };
 
   const getTokenIconUrl = (mint: string) => {
-    // dUSDC uses USDC icon
+    // dUSDC uses USDC icon from mainnet
     if (mint === 'USDCoctVLVnvTXBEuP9s8hntucdJokbo17RwHuNXemT') {
       return 'https://img-v1.raydium.io/icon/EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v.png';
     }
     
+    // DLink uses devnet icon URL
+    if (mint === 'G3nB3rDsYEKKt1zGoYHr8mbrGeB1hViVzdzTZhzDM9J1') {
+      return `https://img-v1-devnet.raydium.io/icon/${mint}.png`;
+    }
+    
+    // Default to mainnet icon URL
     return `https://img-v1.raydium.io/icon/${mint}.png`;
   };
 
@@ -213,8 +214,9 @@ function fromBaseUnits(amountBase: string | number, decimals: number): number {
 export default function Home() {
   const { wallets, select, connect, disconnect, connected, publicKey, wallet, signTransaction, sendTransaction } = useWallet();
   const { connection } = useConnection();
-  const [from, setFrom] = useState<Token>(TOKENS[0]);
-  const [to, setTo] = useState<Token>(TOKENS[1]);
+  // Set default tokens based on network: DLink for devnet, WSOL for mainnet
+  const [from, setFrom] = useState<Token>(NETWORK === 'devnet' ? TOKENS[1] : TOKENS[0]); // DLink on devnet, WSOL on mainnet
+  const [to, setTo] = useState<Token>(TOKENS[0]);
   const [amountIn, setAmountIn] = useState<string>('');
   const [amountOut, setAmountOut] = useState<string>('');
   const [minOut, setMinOut] = useState<string>('');
@@ -228,6 +230,9 @@ export default function Home() {
   const [swapping, setSwapping] = useState<boolean>(false);
   const [poolId, setPoolId] = useState<string>('');
   const [protectWithZyga, setProtectWithZyga] = useState<boolean>(false);
+  const [slippage, setSlippage] = useState<number>(0.5); // Default 0.5%
+  const [customSlippage, setCustomSlippage] = useState<string>('');
+  const [faucetLoading, setFaucetLoading] = useState<{ DLink: boolean; dUSDC: boolean }>({ DLink: false, dUSDC: false });
   const debounceRef = useRef<NodeJS.Timeout | null>(null);
 
   const handleSelectWallet = async (selectedWallet: Wallet) => {
@@ -359,7 +364,7 @@ export default function Home() {
       if (debounceRef.current) clearTimeout(debounceRef.current);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [amountIn, from.mint, to.mint, canSwapPair]);
+  }, [amountIn, from.mint, to.mint, canSwapPair, slippage]);
 
   async function quote() {
     if (!connected || !publicKey) {
@@ -372,7 +377,9 @@ export default function Home() {
     try {
       setFetching(true);
       const inBase = toBaseUnits(amountIn, from.decimals);
-      const url = `/api/quote?inputMint=${encodeURIComponent(from.mint)}&outputMint=${encodeURIComponent(to.mint)}&amount=${encodeURIComponent(inBase)}&slippageBps=50&userPublicKey=${encodeURIComponent(publicKey.toString())}`;
+      // Convert slippage percentage to basis points (1% = 100 bps)
+      const slippageBps = Math.round(slippage * 100);
+      const url = `/api/quote?inputMint=${encodeURIComponent(from.mint)}&outputMint=${encodeURIComponent(to.mint)}&amount=${encodeURIComponent(inBase)}&slippageBps=${slippageBps}&userPublicKey=${encodeURIComponent(publicKey.toString())}`;
       const r = await fetch(url);
       const j = await r.json();
       
@@ -425,6 +432,9 @@ export default function Home() {
 
       const inBase = toBaseUnits(amountIn, from.decimals);
 
+      // Convert slippage percentage to decimal (e.g., 0.5% -> 0.005)
+      const slippageDecimal = slippage / 100;
+
       // Call swap API to get serialized transaction
       const response = await fetch('/api/swap', {
         method: 'POST',
@@ -435,7 +445,7 @@ export default function Home() {
           inputMint: from.mint,
           outputMint: to.mint,
           amount: inBase,
-          slippage: 0.005, // 0.5% slippage
+          slippage: slippageDecimal,
           poolId,
           userPublicKey: publicKey.toString(),
         }),
@@ -458,7 +468,6 @@ export default function Home() {
       const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash('confirmed');
 
       console.log('Original transaction:', transaction);
-      console.log('Original transaction serialized:', JSON.stringify(transaction, null, 2));
 
       // Generate Zyga proof if protection is enabled
       if (protectWithZyga) {
@@ -481,11 +490,18 @@ export default function Home() {
           const accountInfo = await connection.getTokenAccountBalance(outputTokenAccountPubkey);
           currentOutputBalance = accountInfo.value.amount;
 
-          // Calculate minimum output in base units
-          const minOutputAmount = 120; // toBaseUnits(amountOut, to.decimals);
+          // Calculate minimum output amount with slippage tolerance
+          // minOutput = expectedOutput * (1 - slippage)
+          const expectedOutputBase = BigInt(toBaseUnits(amountOut, to.decimals));
+          const slippageDecimal = slippage / 100;
+          const minOutputAmount = (expectedOutputBase * BigInt(Math.floor((1 - slippageDecimal) * 1000000)) / BigInt(1000000)).toString();
           
+          console.log('Expected output base:', expectedOutputBase);
+          console.log('Slippage decimal:', slippageDecimal);
+          console.log('Min output amount:', minOutputAmount);
+
           // Calculate actual amount (current balance + expected output)
-          const actualAmount = (BigInt(currentOutputBalance) + BigInt(minOutputAmount)).toString();
+          const actualAmount = (BigInt(currentOutputBalance) + BigInt(expectedOutputBase)).toString();
 
           console.log('Proof params:', {
             outputTokenAccount: outputTokenAccountPubkey.toString(),
@@ -529,7 +545,7 @@ export default function Home() {
           const proofIxData = Buffer.from(proofInstructionData.proofIx, 'base64');
 
           // Zyga program ID
-          const zygaProgramId = new PublicKey('7ZpqSoUa77PQVbx6wVCpQgVuXQfw8oYsuPJwoW5YwSPD');
+          const zygaProgramId = new PublicKey('6g8bkmVfVHTrm4PgpfYBEbwumj7HKG2H9ZQ2ULitYk7t');
 
           // // Create the Zyga proof instruction with the output token account
           // const proofInstruction = new TransactionInstruction({
@@ -652,7 +668,6 @@ export default function Home() {
       transaction.message.recentBlockhash = blockhash;
 
       console.log('Swap transaction:', transaction);
-      console.log('Swap transaction serialized:', JSON.stringify(transaction, null, 2));
 
       // ADD TX SIZE MEASUREMENT
       // Temporarily empty the last instruction data to test if size is the issue
@@ -743,8 +758,58 @@ export default function Home() {
     }
   };
 
+  const handleFaucet = async (tokenType: 'DLink' | 'dUSDC') => {
+    if (!connected || !publicKey) {
+      setError('Please connect your wallet to use the faucet');
+      return;
+    }
+
+    if (NETWORK !== 'devnet') {
+      setError('Faucet is only available on devnet');
+      return;
+    }
+
+    try {
+      setFaucetLoading(prev => ({ ...prev, [tokenType]: true }));
+      setError('');
+
+      // Call backend faucet endpoint
+      const faucetApiUrl = process.env.NEXT_PUBLIC_PROOF_API_URL || 'http://localhost:4000';
+      const response = await fetch(`${faucetApiUrl}/faucet`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          walletAddress: publicKey.toString(),
+          tokenType,
+        }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok || !data.success) {
+        throw new Error(data.error || 'Failed to request tokens from faucet');
+      }
+
+      const amount = tokenType === 'DLink' ? '10' : '0.01';
+      const explorerUrl = `https://solscan.io/tx/${data.signature}?cluster=devnet`;
+      
+      alert(`Success! ${amount} ${tokenType} sent to your wallet.\n\nTransaction: ${data.signature}\n\nView on Solscan: ${explorerUrl}`);
+      
+      // Refresh balances
+      await fetchBalances();
+    } catch (e) {
+      console.error('Faucet error:', e);
+      const errorMsg = (e as Error).message || 'Failed to request tokens';
+      setError(errorMsg);
+    } finally {
+      setFaucetLoading(prev => ({ ...prev, [tokenType]: false }));
+    }
+  };
+
   return (
-    <div className="container">
+    <>
       <WalletModal 
         isOpen={walletModalOpen} 
         onClose={() => setWalletModalOpen(false)} 
@@ -752,25 +817,30 @@ export default function Home() {
         onSelectWallet={handleSelectWallet}
       />
       
-      <div className="header">
-        <div className="brand">
-          <div className="network-indicator">
-            <span className={`network-badge ${NETWORK}`}>
-              {NETWORK === 'devnet' ? '🔧 Devnet' : '🌐 Mainnet'}
-            </span>
-            <span className="network-note">*Network is fixed at the moment</span>
+      <div className="app-header">
+        <div className="header-content">
+          <div className="header-left">
+            <img src="/Rz_logo.png" alt="Raydium Zyga" className="header-logo" />
+            <span className="header-title">Raydium Zyga</span>
+          </div>
+          <div className="header-right">
+            <div className="network-indicator">
+              <span className={`network-badge ${NETWORK}`}>
+                {NETWORK === 'devnet' ? '🔧 Devnet' : '🌐 Mainnet'}
+              </span>
+            </div>
+            {!connected ? (
+              <button className="connect-btn" onClick={() => setWalletModalOpen(true)}>Connect Wallet</button>
+            ) : (
+              <button className="connect-btn" onClick={disconnect} title={publicKey?.toBase58() || undefined}>
+                {publicKey?.toBase58().slice(0, 4)}...{publicKey?.toBase58().slice(-4)}
+              </button>
+            )}
           </div>
         </div>
-        <div>
-          {!connected ? (
-            <button className="connect-btn" onClick={() => setWalletModalOpen(true)}>Connect Wallet</button>
-          ) : (
-            <button className="connect-btn" onClick={disconnect} title={publicKey?.toBase58() || undefined}>
-              {publicKey?.toBase58().slice(0, 4)}...{publicKey?.toBase58().slice(-4)}
-            </button>
-          )}
-        </div>
       </div>
+
+      <div className="container">
 
       <div className="card" style={{ position: 'relative' }}>
         <div className="card-head">
@@ -782,17 +852,51 @@ export default function Home() {
 
         {settingsOpen && (
           <div className="settings-panel" onMouseLeave={() => setSettingsOpen(false)}>
-            <div className="settings-item">
-              <div>
-                <div style={{ fontWeight: 600 }}>Minimum Output</div>
-                <div className="hint">Sets a minimum received amount (To)</div>
+            <div className="settings-section">
+              <div style={{ fontWeight: 600, marginBottom: 8 }}>Slippage Tolerance</div>
+              <div className="slippage-presets">
+                <button 
+                  className={`slippage-preset ${slippage === 0.1 && !customSlippage ? 'active' : ''}`}
+                  onClick={() => { setSlippage(0.1); setCustomSlippage(''); }}
+                >
+                  0.1%
+                </button>
+                <button 
+                  className={`slippage-preset ${slippage === 0.5 && !customSlippage ? 'active' : ''}`}
+                  onClick={() => { setSlippage(0.5); setCustomSlippage(''); }}
+                >
+                  0.5%
+                </button>
+                <button 
+                  className={`slippage-preset ${slippage === 1 && !customSlippage ? 'active' : ''}`}
+                  onClick={() => { setSlippage(1); setCustomSlippage(''); }}
+                >
+                  1%
+                </button>
               </div>
-              <input
-                inputMode="decimal"
-                placeholder="0.0"
-                value={minOut}
-                onChange={(e) => setMinOut(e.target.value)}
-              />
+              <div className="custom-slippage">
+                <input
+                  inputMode="decimal"
+                  placeholder="Custom %"
+                  value={customSlippage}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    // Only allow numbers and one decimal point
+                    if (val === '' || /^\d*\.?\d{0,2}$/.test(val)) {
+                      setCustomSlippage(val);
+                      const num = parseFloat(val);
+                      if (!isNaN(num) && num >= 0 && num <= 100) {
+                        setSlippage(num);
+                      }
+                    }
+                  }}
+                  className="custom-slippage-input"
+                />
+                <span className="custom-slippage-label">%</span>
+              </div>
+              <div className="hint" style={{ marginTop: 4 }}>
+                Current: {customSlippage || slippage}%
+              </div>
             </div>
           </div>
         )}
@@ -896,7 +1000,37 @@ export default function Home() {
         </button>
       </div>
 
-      <div className="footer-note">This is a minimal Raydium-like quote demo.</div>
-    </div>
+      {/* Faucet Buttons - Only show on devnet */}
+      {NETWORK === 'devnet' && (
+        <div className="faucet-section">
+          <div className="faucet-title">Devnet Faucet</div>
+          <div className="faucet-buttons">
+            <button
+              className="faucet-btn"
+              disabled={!connected || faucetLoading.DLink}
+              onClick={() => handleFaucet('DLink')}
+            >
+              {faucetLoading.DLink ? 'Requesting...' : 'Get 10 DLink'}
+            </button>
+            <button
+              className="faucet-btn"
+              disabled={!connected || faucetLoading.dUSDC}
+              onClick={() => handleFaucet('dUSDC')}
+            >
+              {faucetLoading.dUSDC ? 'Requesting...' : 'Get 0.01 dUSDC'}
+            </button>
+          </div>
+        </div>
+      )}
+
+      </div>
+
+      <div className="app-footer">
+        <div className="footer-content">
+          <img src="/Rz_logo.png" alt="Raydium Zyga" className="footer-logo" />
+          <span className="footer-text">Raydium Zyga</span>
+        </div>
+      </div>
+    </>
   );
 }

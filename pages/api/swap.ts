@@ -81,6 +81,23 @@ export default async function handler(
       rpcData.feeOn === FeeOn.BothToken || rpcData.feeOn === FeeOn.OnlyTokenB
     );
 
+    console.log('Slippage:', slippage);
+    console.log('Swap result:', swapResult);
+    
+    // Convert all BN values to integer strings for better readability
+    const swapResultStrings: Record<string, string> = {};
+    for (const [key, value] of Object.entries(swapResult)) {
+      if (value && typeof value === 'object' && 'toString' in value) {
+        swapResultStrings[key] = value.toString();
+      } else {
+        swapResultStrings[key] = String(value);
+      }
+    }
+    console.log('Swap result (as integer strings):', swapResultStrings);
+
+    
+
+    console.log('forammtted slippage:', Number(slippage));
     // Build swap transaction
     // Note: We use a temporary owner here - the actual signing will happen client-side
     const { transaction } = await raydium.cpmm.swap({
@@ -108,12 +125,7 @@ export default async function handler(
     // }
 
     // Serialize transaction for client-side signing
-    const serialized = Buffer.from(
-      transaction.serialize({
-        requireAllSignatures: false,
-        verifySignatures: false,
-      })
-    ).toString('base64');
+    const serialized = Buffer.from(transaction.serialize()).toString('base64');
 
     return res.status(200).json({
       ok: true,

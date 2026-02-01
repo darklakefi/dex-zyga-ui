@@ -9,12 +9,13 @@ services:
     depends_on:
       - backend
     environment:
+      # Frontend variables (NEXT_PUBLIC_* only)
       # Network configuration (mainnet or devnet)
-      - NEXT_PUBLIC_NETWORK=devnet
-      # Helius API key for mainnet (not required for devnet)
-      - NEXT_PUBLIC_HELIUS_API_KEY=${HELIUS_API_KEY}
-      # Backend proof generator URL
-      - NEXT_PUBLIC_PROOF_API_URL=http://backend:4000
+      - NEXT_PUBLIC_NETWORK=${NEXT_PUBLIC_NETWORK:-devnet}
+      # Helius API key for RPC access
+      - NEXT_PUBLIC_HELIUS_API_KEY=${NEXT_PUBLIC_HELIUS_API_KEY}
+      # Backend proof generator URL (browser access, not Docker internal)
+      - NEXT_PUBLIC_PROOF_API_URL=${NEXT_PUBLIC_PROOF_API_URL:-https://rejewski.vitorpy.com/api}
       # Optional: Custom RPC endpoint override
       # - NEXT_PUBLIC_RPC_ENDPOINT=your_custom_rpc_endpoint
     volumes:
@@ -35,7 +36,13 @@ services:
     ports:
       - "4000:4000"
     environment:
-      - PORT=4000
+      - PORT=${PORT:-4000}
+      # Network configuration (mainnet or devnet)
+      - NETWORK=${NETWORK:-devnet}
+      # Helius API key (required for RPC access)
+      - HELIUS_API_KEY=${HELIUS_API_KEY}
+      # Faucet private key (required for devnet faucet functionality)
+      - FAUCET_PRIVATE_KEY=${FAUCET_PRIVATE_KEY}
     volumes:
       - ./packages/backend:/app
       - backend-node-modules:/app/node_modules

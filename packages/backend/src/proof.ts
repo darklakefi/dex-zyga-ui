@@ -84,10 +84,12 @@ export function makeProof(a: bigint, b: bigint, result: number, tag: string): Pr
   const wFile = path.join(TMP_DIR, `witness_${tag}.json`);
   const pFile = path.join(TMP_DIR, `proof_${tag}.json`);
   
+  // result_check must equal result for the circuit to be satisfiable
   const witness = {
     a: toBits64(a),
     b: toBits64(b),
-    result
+    result,
+    result_check: result
   };
   
   fs.writeFileSync(wFile, JSON.stringify(witness));
@@ -118,15 +120,16 @@ export function makeProof(a: bigint, b: bigint, result: number, tag: string): Pr
 }
 
 /**
- * Build normal-mode instruction data (proof only, 576 bytes)
+ * Build normal-mode instruction data: proof + [a_base: 8 LE] = 584 bytes
  * This is the instruction data that will be added to the transaction
  * 
  * @param proof - The generated proof
- * @returns Buffer containing the serialized proof
+ * @param aBase - The base value used in proof generation (8 bytes LE)
+ * @returns Buffer containing the serialized proof + aBase
  */
-export function buildNormalIx(proof: Proof): Buffer {
-  // Calculate total size: 64 + 128 + 64 + 64 + 64 + 128 + 64 = 576 bytes
-  const buffer = Buffer.alloc(576);
+export function buildNormalIx(proof: Proof, aBase: bigint): Buffer {
+  // Calculate total size: 64 + 128 + 64 + 64 + 64 + 128 + 64 + 8 = 584 bytes
+  const buffer = Buffer.alloc(584);
   let offset = 0;
 
   // Write each proof component in order
@@ -149,6 +152,10 @@ export function buildNormalIx(proof: Proof): Buffer {
   offset += proof.b_pub_base.length;
 
   buffer.set(proof.c_pub_base, offset);
+  offset += proof.c_pub_base.length;
+
+  // Write aBase as 8-byte little-endian
+  buffer.writeBigUInt64LE(aBase, offset);
 
   return buffer;
 }
@@ -174,11 +181,16 @@ export async function generateSlippageProof(
 
   console.log('Generating proof for actualAmount:', actualAmount, 'and minAmount:', minAmount);
 
-  // Generate proof (result = 1 means a > b)
-  const proof = makeProof(actualAmount, minAmount, 1, tag);
+  const a = actualAmount;
+  const b = actualAmount - 1n;
+  const aBase = actualAmount; // Base value used in proof generation
 
-  // Build instruction data
-  return buildNormalIx(proof);
+  console.log('Generating proof for a:', a, 'and b:', b);
+  // Generate proof (result = 1 means a > b)
+  const proof = makeProof(a, b, 1, tag);
+
+  // Build instruction data with proof + aBase
+  return buildNormalIx(proof, aBase);
 }
 
 /**
