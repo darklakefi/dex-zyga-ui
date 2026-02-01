@@ -19,5 +19,5 @@ COPY . .
 # Expose Next.js default port
 EXPOSE 3000
 
-# Start development server
-CMD ["pnpm", "run", "dev"]
+# Start development server (install deps at runtime since bind mount overwrites /app)
+CMD ["sh", "-c", "pnpm install && pnpm run dev"]
