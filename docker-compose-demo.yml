@@ -46,7 +46,6 @@ services:
     volumes:
       - .:/workspace
       - backend-node-modules:/workspace/node_modules
-      - backend-proof-generation:/workspace/packages/backend/proof-generation
       - /workspace/packages/backend/dist
       - /workspace/packages/backend/.proof-tmp
     networks:
@@ -92,6 +91,5 @@ networks:
 volumes:
   demo-web-node-modules:
   backend-node-modules:
-  backend-proof-generation:
   certbot-www:
   certbot-conf:
