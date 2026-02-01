@@ -4,23 +4,23 @@ FROM node:20-alpine
 # Install pnpm
 RUN corepack enable && corepack prepare pnpm@9.15.5 --activate
 
-# Set working directory
-WORKDIR /app
+# Set working directory for the monorepo
+WORKDIR /workspace
 
-# Copy backend package files
-COPY packages/backend/package.json ./
+# Copy workspace configuration and root lockfile
+COPY pnpm-workspace.yaml package.json pnpm-lock.yaml ./
 
-# Install dependencies
-RUN pnpm install --frozen-lockfile
+# Copy backend package.json
+COPY packages/backend/package.json ./packages/backend/
 
-# Copy backend source (includes proof-generation folder)
-COPY packages/backend ./
+# Install dependencies using workspace (frozen lockfile)
+RUN pnpm install --frozen-lockfile --filter @dex-zyga-ui/backend...
 
-# Build backend
-RUN pnpm run build
+# Set working directory to backend
+WORKDIR /workspace/packages/backend
 
 # Expose port
 EXPOSE 4000
 
-# Start server
-CMD ["pnpm", "run", "start"]
+# Start server in development mode
+CMD ["pnpm", "run", "dev"]
